@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="A private, offline countdown desk. No accounts, dependencies, or network requests.">
+  <title>Countdown Desk · 倒计时桌面</title>
+  <style>
+    :root{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:#22352c;background:#f3f1e9;color-scheme:light}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;padding:48px 20px;display:grid;place-items:center}
+    main{width:min(800px,100%)}header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:48px}
+    .brand{font-size:13px;font-weight:700;letter-spacing:.16em}.tag{font-size:12px;border:1px solid #cad2c7;padding:7px 12px;border-radius:99px;color:#5c6b60}
+    .eyebrow{font-size:12px;letter-spacing:.16em;color:#6a796e;margin:0 0 16px}h1{font-size:clamp(28px,6vw,48px);line-height:1.2;overflow-wrap:anywhere;margin:0 0 16px;letter-spacing:-.04em}
+    #status{color:#66766a;font-size:14px;margin:0;min-height:24px}.clock{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:32px 0}
+    .unit{background:#fffef9;border:1px solid #dfe2d6;border-radius:18px;padding:28px 10px;text-align:center}
+    .unit strong{display:block;font-size:clamp(32px,7vw,64px);font-variant-numeric:tabular-nums;font-weight:550;line-height:1.1}.unit span{display:block;color:#768174;font-size:12px;margin-top:10px}
+    form{background:#e8ecdf;border-radius:20px;padding:24px}label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
+    .fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}input{display:block;width:100%;min-height:46px;border:1px solid #c8d0bd;border-radius:9px;background:#fffef9;padding:11px;color:#22352c;font:inherit;font-size:14px}
+    input:focus-visible,button:focus-visible{outline:3px solid #bbcb9d;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}
+    button{cursor:pointer;border:0;border-radius:9px;padding:12px 17px;font:inherit;font-size:13px;background:#d5ddc8;color:#304333}button[type=submit]{background:#254735;color:#fff}.quiet{background:transparent;color:#64735d}
+    #message{font-size:13px;color:#8a352a;margin:12px 0 0;min-height:18px}footer{font-size:12px;color:#7b8578;margin-top:24px;line-height:1.7}
+    @media(max-width:560px){body{padding:24px 16px}header{margin-bottom:36px}.fields{grid-template-columns:1fr}.clock{gap:7px}.unit{border-radius:12px;padding:22px 5px}form{padding:20px}.tag{font-size:11px}}
+    @media(prefers-reduced-motion:no-preference){button{transition:filter .15s}button:hover{filter:brightness(.94)}}
+  </style>
+</head>
+<body>
+<main>
+  <header><span class="brand">COUNTDOWN DESK</span><span class="tag">离线可用 · 数据留在本机</span></header>
+  <p class="eyebrow">给重要的事情留一个位置</p>
+  <h1 id="heading">下一件值得期待的事</h1>
+  <p id="status" role="status">设置一个目标时间，开始倒计时。</p>
+  <section class="clock" aria-label="剩余时间">
+    <div class="unit"><strong id="days">00</strong><span>天</span></div>
+    <div class="unit"><strong id="hours">00</strong><span>小时</span></div>
+    <div class="unit"><strong id="minutes">00</strong><span>分钟</span></div>
+    <div class="unit"><strong id="seconds">00</strong><span>秒</span></div>
+  </section>
+  <form id="form">
+    <div class="fields">
+      <div><label for="name">这件事叫什么</label><input id="name" maxlength="120" placeholder="例如：旅行出发、项目上线" autocomplete="off"></div>
+      <div><label for="target">目标时间（本地时区）</label><input id="target" type="datetime-local" required></div>
+    </div>
+    <div class="actions">
+      <button type="submit">开始倒计时</button>
+      <button type="button" data-hours="1">一小时后</button>
+      <button type="button" data-hours="24">明天此时</button>
+      <button type="button" id="clear" class="quiet">清除</button>
+    </div>
+    <p id="message" role="alert"></p>
+  </form>
+  <footer>不需要账号，不加载第三方资源。刷新页面会恢复已保存的目标。<br>网页不会在浏览器关闭后发送通知。</footer>
+</main>
+<script>
+'use strict';
+const KEY = 'countdown-desk:v1';
+const byId = id => document.getElementById(id);
+const nameInput = byId('name');
+const targetInput = byId('target');
+let target = null;
+let label = '';
+let previousStatus = '';
+function inputValue(time) {
+  const date = new Date(time);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function parts(deadline, now) {
+  const left = Math.max(0, Math.ceil((deadline-now)/1000));
+  return [Math.floor(left/86400), Math.floor(left/3600)%24, Math.floor(left/60)%60, left%60];
+}
+function render() {
+  const values = target === null ? [0,0,0,0] : parts(target, Date.now());
+  ['days','hours','minutes','seconds'].forEach((id, i) => { byId(id).textContent = String(values[i]).padStart(2, '0'); });
+  byId('heading').textContent = label || '下一件值得期待的事';
+  const status = target === null ? '设置一个目标时间，开始倒计时。' : Date.now() >= target ? '时间到了。祝一切顺利！' : `目标：${new Date(target).toLocaleString('zh-CN', {hour12:false})}`;
+  if (status !== previousStatus) { byId('status').textContent = status; previousStatus = status; }
+}
+function setTarget() {
+  const time = new Date(targetInput.value).getTime();
+  if (!Number.isFinite(time)) { byId('message').textContent = '请选择一个有效的目标时间。'; return; }
+  target = time;
+  label = nameInput.value.trim();
+  byId('message').textContent = '';
+  try { localStorage.setItem(KEY, JSON.stringify({target, label})); }
+  catch { byId('message').textContent = '浏览器不允许保存；当前倒计时仍可正常使用。'; }
+  render();
+}
+byId('form').addEventListener('submit', event => { event.preventDefault(); setTarget(); });
+document.querySelectorAll('[data-hours]').forEach(button => button.addEventListener('click', () => {
+  targetInput.value = inputValue(Date.now() + Number(button.dataset.hours)*3600000);
+  setTarget();
+}));
+byId('clear').addEventListener('click', () => {
+  target = null; label = ''; nameInput.value = ''; targetInput.value = inputValue(Date.now()+86400000);
+  byId('message').textContent = '';
+  try { localStorage.removeItem(KEY); } catch { byId('message').textContent = '浏览器存储不可用，已清除本页显示。'; }
+  render();
+});
+targetInput.value = inputValue(Date.now()+86400000);
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+  if (saved && Number.isFinite(saved.target) && typeof saved.label === 'string') {
+    target = saved.target; label = saved.label.slice(0,120); nameInput.value = label; targetInput.value = inputValue(target);
+  }
+} catch { /* A corrupt or unavailable saved target does not prevent use. */ }
+render();
+setInterval(render, 250);
+</script>
+</body>
+</html>
